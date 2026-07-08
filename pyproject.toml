@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "XEdu-python"
+version = "0.2.4"
+description = "XEdu: AI Education Toolkit for K-12"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "OpenXLab-Edu", email = "wangbolun@pjlab.org.cn"}
+]
+keywords = ["ai", "education", "deep-learning", "onnx", "inference"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.26,<2",
+    "matplotlib>=3.8",
+    "opencv-python>=4.8,<5",
+    "onnxruntime>=1.17,<2",
+    "pillow>=10.0,<13",
+    "ftfy>=6.1",
+    "regex>=2023.0.0",
+    "tqdm>=4.66",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+ocr = ["rapidocr_onnxruntime>=1.4.4"]
+audio = ["soundfile>=0.12,<1"]
+all = [
+    "rapidocr_onnxruntime>=1.4.4",
+    "soundfile>=0.12,<1",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "flake8>=6.0",
+    "isort>=5.12",
+]
+
+[project.urls]
+Homepage = "https://www.openinnolab.org.cn/pjedu/xedu/mmedu"
+Documentation = "https://xedu.readthedocs.io"
+Repository = "https://github.com/OpenXLab-Edu/XEdu-python"
+"Bug Tracker" = "https://github.com/OpenXLab-Edu/XEdu-python/issues"
+
+[project.scripts]
+XEdu = "XEdu.version:hello"
+
+[tool.setuptools]
+packages = ["XEdu"]
+
+[tool.setuptools.package-data]
+XEdu = [
+    "hub/none.jpg",
+    "hub/font/*.ttf",
+    "examples/*.py",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_mode = 3
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --cov=XEdu --cov-report=term-missing"
+
+[tool.coverage.run]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+]

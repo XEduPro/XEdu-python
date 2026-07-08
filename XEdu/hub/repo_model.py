@@ -43,9 +43,11 @@ class RepoModel:
     def load_modelscope_repo(self, local_path):
         try: 
             from modelscope import snapshot_download
-        except:
-            os.system("pip install modelscope -U")
-            from modelscope import snapshot_download
+        except ImportError as exc:
+            raise ImportError(
+                "ModelScope support requires the optional dependency 'modelscope'. "
+                "Install it before using repo-based remote models."
+            ) from exc
         model_dir = snapshot_download(self.repo,local_dir=os.path.join(local_path,self.repo))
         process = os.path.join(model_dir,"data_process.py")
         spec = importlib.util.spec_from_file_location("data_process", process)
@@ -81,10 +83,8 @@ class RepoModel:
 
         return self.repo_res
     
-    def _custom_infer(self, data,**kwarg):
-        func_str = "self.custom_inference(data"
-        for i in kwarg:
-            func_str += ',{}="{}"'.format(i,kwarg[i])
-        func_str += ")"
-        self.custom_res = eval(func_str)
-        return self.custom_res
+    def _custom_infer(self, data, **kwarg):
+        if self.custom_inference is None:
+            raise RuntimeError("Custom inference function not available")
+        self.custom_res = self.custom_inference(data, **kwarg)
+        return self.custom_res               

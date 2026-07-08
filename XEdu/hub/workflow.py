@@ -4,6 +4,7 @@ import cv2
 import json
 import numpy as np
 import warnings
+import ast
 if TYPE_CHECKING:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
 import onnxruntime as ort
@@ -12,6 +13,7 @@ import io
 import matplotlib.pyplot as plt
 import pprint
 import os
+import shutil
 from PIL import Image
 from .tokenizer.qa_tokenizer import *
 from .tokenizer.qa_squadprocess import *
@@ -20,9 +22,53 @@ from .datatset_class import coco_class,imagenet_class
 import copy
 import requests
 from tqdm import tqdm
-from .models import efficientVIT_sam as sam 
+from .models import efficientVIT_sam as sam
 from .errorcode import ErrorCodeFactory as ecf
 T = TypeVar("T")
+
+def _xedu_home_dir() -> str:
+    custom_home = os.environ.get("XEDU_HOME")
+    if custom_home:
+        return os.path.abspath(os.path.expanduser(custom_home))
+    if os.name == "nt":
+        base_dir = (
+            os.environ.get("LOCALAPPDATA")
+            or os.environ.get("APPDATA")
+            or os.path.expanduser("~")
+        )
+    else:
+        base_dir = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+            os.path.expanduser("~"), ".cache"
+        )
+    return os.path.join(os.path.abspath(base_dir), "XEdu")
+
+def _default_hub_dir(*parts: str) -> str:
+    return os.path.join(_xedu_home_dir(), "hub", *parts)
+
+def _resolve_download_dir(download_path: Optional[str], default_subdir: str) -> str:
+    if download_path is None:
+        return _default_hub_dir(default_subdir)
+    return os.path.abspath(os.path.expanduser(download_path))
+
+def _migrate_legacy_file(target_path: str, *legacy_dir_names: str) -> None:
+    if os.path.exists(target_path):
+        return
+    file_name = os.path.basename(target_path)
+    for legacy_dir_name in legacy_dir_names:
+        legacy_path = os.path.join(os.getcwd(), legacy_dir_name, file_name)
+        if os.path.exists(legacy_path):
+            os.makedirs(os.path.dirname(target_path) or ".", exist_ok=True)
+            shutil.copy2(legacy_path, target_path)
+            return
+
+def _migrate_legacy_directory(target_dir: str, *legacy_dir_names: str) -> None:
+    if os.path.exists(target_dir):
+        return
+    for legacy_dir_name in legacy_dir_names:
+        legacy_dir = os.path.join(os.getcwd(), legacy_dir_name)
+        if os.path.isdir(legacy_dir):
+            shutil.copytree(legacy_dir, target_dir)
+            return
 
 def to_batches(items: Iterable[T], size: int) -> Iterator[List[T]]:
     """
@@ -84,7 +130,7 @@ task_dict = {
         "gen_color":"gen_color.onnx",
         "segment_anything":['seg_sam_encoder.onnx','seg_sam_decoder.onnx'],
         "depth_anything":"depth_anything.onnx",
-        "det_face":"...",
+        "det_face":"face_detection_yunet_2023mar.onnx",
         "ocr":"...",
         "mmedu":"...",
         "basenn":"...",
@@ -92,18 +138,20 @@ task_dict = {
         "custom":"...",
 }
 style_list = ['mosaic','candy','rain-princess','udnie','pointilism']
+FACE_DET_LEGACY_PARAMS = {"scaleFactor", "minNeighbors", "minSize", "maxSize"}
 
 class Downloader(object):
-    def __init__(self, url, file_path,model_name=None,output_dir='checkpoint',overwrite=False):
+    def __init__(self, url, file_path,model_name=None,output_dir='checkpoints',overwrite=False):
         self.url = url
-        self.file_path = file_path
+        self.file_path = os.path.abspath(os.path.expanduser(file_path))
         if model_name is None:
-            self.model_name = os.path.basename(file_path)
+            self.model_name = os.path.basename(self.file_path)
         else:
             self.model_name = model_name
-        self.output_dir = output_dir
+        self.output_dir = os.path.abspath(os.path.expanduser(output_dir))
 
     def start(self):
+        os.makedirs(os.path.dirname(self.file_path) or ".", exist_ok=True)
         res_length = requests.get(self.url, stream=True)
         total_size = int(res_length.headers['Content-Length'])
         if os.path.exists(self.file_path):
@@ -180,10 +228,11 @@ class Workflow:
 
     def __init__(self, task=None,checkpoint=None,download_path=None,repo=None,**kwargs):
         if repo is not None:
-            path = download_path if download_path is not None else "repo"
+            path = _resolve_download_dir(download_path, "repo")
             self.repo = repo
             from .repo_model import RepoModel
             self.model = RepoModel(path,repo)
+            _migrate_legacy_directory(os.path.join(path, repo), os.path.join("repo", repo))
 
             if os.path.exists(os.path.join(path,repo)):
                 self.model.load_local_repo()
@@ -216,7 +265,9 @@ class Workflow:
             "facedetect":"det_face",
             "bodydetect":"det_body",
         }
-        path = download_path if download_path is not None else "checkpoint"
+        path = _resolve_download_dir(download_path, "checkpoints")
+        self.download_path = path
+        self.asset_root = os.path.dirname(path)
         if task not in self.task_dict.keys() and task not in self.task_nick_name.keys():
             raise ValueError(f"Error Code: -310. No such task: '{task}'. Please refer to 'support_task()' method for a list of supported tasks. ")
         if task in self.task_nick_name.keys():
@@ -260,10 +311,10 @@ class Workflow:
             else:
                 checkpoint = self.task_dict[self.task]
             checkpoint = os.path.join(path, checkpoint)
+            _migrate_legacy_file(checkpoint, "checkpoint", "checkpoints")
             if not os.path.exists(checkpoint): # 本地未检测到模型，云端下载默认模型
                 print("本地未检测到{}任务对应模型，云端下载中...".format(self.task))
-                if not os.path.exists(path):
-                    os.mkdir(path)
+                os.makedirs(path, exist_ok=True)
 
                 baseurl='https://www.openinnolab.org.cn/'
                 model_name_map_download ={
@@ -279,7 +330,7 @@ class Workflow:
                     'pose_body26':'/res/api/v1/file/creator/2de9dd14-93c7-4b89-ac79-da3231c79d01.onnx&name=pose_body26.onnx',
                     'pose_wholebody133':'/res/api/v1/file/creator/98e010a3-76f4-4209-bba9-33fba2fe1281.onnx&name=pose_wholebody133.onnx',
                     'pose_hand21':'/res/api/v1/file/creator/e5e5540b-3475-42f8-be0b-6ea8d46d577b.onnx&name=pose_hand21.onnx',
-                    'pose_face106':'/res/api/v1/file/creator/98e010a3-76f4-4209-bba9-33fba2fe1281.onnx&name=pose_wholebody133.onnx',
+                    'pose_face106':'/res/api/v1/file/creator/d7a3d6e2-4a8f-4c9a-b1e5-f9c3e8a2b4d1.onnx&name=pose_face106.onnx',
                     
                     'embedding_image':'/res/api/v1/file/creator/69aebb8e-3202-4022-9618-a64560ffef76.onnx&name=embedding_image.onnx',
                     'embedding_text':'/res/api/v1/file/creator/ce38d2ad-e8be-4e6a-990a-a6d818e5655b.onnx&name=embedding_text.onnx',
@@ -309,13 +360,49 @@ class Workflow:
             else:
                 self.model = ort.InferenceSession(checkpoint, None)
         elif self.task =="det_face":
-                self.model = cv2.CascadeClassifier(cv2.data.haarcascades+'haarcascade_frontalface_default.xml')
+                checkpoint = checkpoint or os.path.join(path, self.task_dict[self.task])
+                if checkpoint.lower().endswith(".xml"):
+                    self.model = cv2.CascadeClassifier(checkpoint)
+                else:
+                    _migrate_legacy_file(checkpoint, "checkpoint", "checkpoints")
+                    detector_url = (
+                        "https://github.com/opencv/opencv_zoo/raw/main/models/"
+                        "face_detection_yunet/face_detection_yunet_2023mar.onnx"
+                    )
+                    os.makedirs(os.path.dirname(checkpoint) or ".", exist_ok=True)
+                    if not os.path.exists(checkpoint):
+                        print("本地未检测到{}任务对应模型，云端下载中...".format(self.task))
+                        downloader = Downloader(
+                            detector_url,
+                            checkpoint,
+                            output_dir=os.path.dirname(checkpoint) or path,
+                        )
+                        downloader.start()
+                    try:
+                        self.model = cv2.FaceDetectorYN_create(
+                            checkpoint, "", (320, 320), 0.6, 0.3, 5000
+                        )
+                    except cv2.error:
+                        if os.path.exists(checkpoint):
+                            os.remove(checkpoint)
+                        print("det_face模型文件损坏，重新下载中...")
+                        downloader = Downloader(
+                            detector_url,
+                            checkpoint,
+                            output_dir=os.path.dirname(checkpoint) or path,
+                        )
+                        downloader.start()
+                        self.model = cv2.FaceDetectorYN_create(
+                            checkpoint, "", (320, 320), 0.6, 0.3, 5000
+                        )
         elif self.task == "ocr":
                 try :
                     from rapidocr_onnxruntime import RapidOCR
-                except:
-                    os.system("pip install rapidocr_onnxruntime==1.3.7")
-                    from rapidocr_onnxruntime import RapidOCR
+                except ImportError as exc:
+                    raise ImportError(
+                        "The 'ocr' task requires the optional dependency "
+                        "'rapidocr_onnxruntime'. Install it before using OCR."
+                    ) from exc
                 self.model = RapidOCR(text_score=0.2)
         elif self.task.lower() == "mmedu":
             if checkpoint is None:
@@ -335,9 +422,11 @@ class Workflow:
             try:
                 import sklearn
                 import joblib
-            except:
-                os.system("pip install scikit-learn")
-                import joblib
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'baseml' task requires the optional dependency "
+                    "'scikit-learn'. Install it before using BaseML checkpoints."
+                ) from exc
             model = joblib.load(checkpoint)
             if isinstance(model, dict):
                 self.model = model['model']
@@ -355,6 +444,8 @@ class Workflow:
                 assert isinstance(checkpoint,list) and len(checkpoint)==2, "checkpoint should be a list of two paths for encoder and decoder."
             decoder_url = 'https://www.openinnolab.org.cn/res/api/v1/file/creator/70f02a96-6998-4196-92ac-c61a9a841c66.onnx&name=seg_sam_decoder.onnx'
             encoder_url  ='https://www.openinnolab.org.cn//res/api/v1/file/creator/b0baaf01-8673-4762-a99b-f47661454395.onnx&name=seg_sam_encoder.onnx'
+            _migrate_legacy_file(checkpoint[0], "checkpoint", "checkpoints")
+            _migrate_legacy_file(checkpoint[1], "checkpoint", "checkpoints")
             if not os.path.exists(checkpoint[0]):
                 print("本地未检测到{}任务对应encoder模型，云端下载中...".format(self.task))
                 if not os.path.exists(path):
@@ -735,6 +826,7 @@ class Workflow:
         # Traffic Object Detection
         bboxes, scores, class_ids = [], [], []
         for score, batchno_classid_y1x1y2x2_ in zip(scores_, batchno_classid_y1x1y2x2):
+            score = float(np.asarray(score).reshape(-1)[0])
             if score < self.confThreshold:
                 continue
 
@@ -1020,8 +1112,10 @@ class Workflow:
     def _custom_infer(self,data,preprocess=None, postprocess=None): 
         if preprocess is not None:
             data = preprocess(data)
-        ort_inputs = {'input': data}
-        self.custom_res = self.model.run(['output'], ort_inputs)
+        input_name = self.model.get_inputs()[0].name
+        output_names = [o.name for o in self.model.get_outputs()]
+        ort_inputs = {input_name: data}
+        self.custom_res = self.model.run(output_names, ort_inputs)
         # print(self.custom_res[0].shape)
         if postprocess is not None:
             self.custom_res = postprocess(self.custom_res,data)
@@ -1030,7 +1124,10 @@ class Workflow:
     def _basenn_infer(self,data=None,show=True, img_type=None):
         ort_session = self.model
         metamap = ort_session.get_modelmeta().custom_metadata_map
-        input_size = eval(metamap['input_size'])
+        try:
+            input_size = ast.literal_eval(metamap['input_size'])
+        except (ValueError, SyntaxError):
+            input_size = tuple(map(int, metamap['input_size'].strip('()').split(',')))
         dataset_type = metamap['dataset_type']
         if dataset_type == 'img':
             if isinstance(data,str): # 文件路径
@@ -1061,7 +1158,10 @@ class Workflow:
                     data = np.load(data, allow_pickle=True)['data']
                     data  = data.astype(np.float32) # tab iris
                 else: # tang zi
-                    word2idx = eval(metamap['word2idx'])
+                    try:
+                        word2idx = ast.literal_eval(metamap['word2idx'])
+                    except (ValueError, SyntaxError):
+                        word2idx = json.loads(metamap['word2idx'])
                     self.ix2word = {v:k for k, v in word2idx.items()}
 
                     data = [[word2idx[i] for i in data]]
@@ -1107,16 +1207,16 @@ class Workflow:
         result = list(zip(self.classes,self.bboxs))
         if img_type:
             from rapidocr_onnxruntime import VisRes
-            path = "font"
+            path = os.path.join(self.asset_root, "font")
             font_file = os.path.join(path,"FZYTK.TTF")
-            if not os.path.exists(font_file): # 下载默认模型
-                if not os.path.exists(path):
-                    os.mkdir(path)
+            _migrate_legacy_file(font_file, "font")
+            if not os.path.exists(font_file):
+                os.makedirs(path, exist_ok=True)
                 url = "https://www.openinnolab.org.cn/res/api/v1/file/creator/80ce50bf-68b6-4a3c-bc64-cc3a5dfd624b.ttf&name=ocr.ttf"
                 downloader = Downloader(url, font_file,output_dir=path)
                 downloader.start()
-            vis = VisRes(font_path=font_file)
-            res_img = vis(data, self.bboxs,  self.classes, self.scores)
+            vis = VisRes(text_score=0.2)
+            res_img = vis(data, self.bboxs, self.classes, self.scores, font_path=font_file)
             if img_type == 'cv2':
                 res_img = res_img
             elif img_type =='pil':
@@ -1134,20 +1234,48 @@ class Workflow:
         else:
             image = copy.copy(data)
         face_model = self.model
-   
-        scaleFactor = 1.1 if 'scaleFactor' not in kwargs else  float(kwargs['scaleFactor'])   
-        minNeighbors = 5 if 'minNeighbors' not in kwargs else int(kwargs['minNeighbors'])
-        minSize = (50,50) if 'minSize' not in kwargs else kwargs['minSize']
-        maxSize = image.shape[:2] if 'maxSize' not in kwargs else kwargs['maxSize']
+        use_legacy_params = any(key in kwargs for key in FACE_DET_LEGACY_PARAMS)
+        is_cascade_model = hasattr(face_model, "detectMultiScale")
 
-        faces = face_model.detectMultiScale(image,scaleFactor=scaleFactor,minNeighbors=minNeighbors,minSize=minSize,maxSize=maxSize) # opencv返回的是（x,y,w,h）
-        self.bboxs = [] # 转换为（x1,y1,x2,y2）
-        for bbox in faces:
-            ex_bbox = [bbox[0],bbox[1],(bbox[0]+bbox[2]),(bbox[1]+bbox[3])] 
-            self.bboxs.append(ex_bbox)
+        self.bboxs = []
         self.scores = []
-        # self.classes = ["face" for i in range(len(self.bboxs))]
         self.classes = None
+
+        if use_legacy_params or is_cascade_model:
+            legacy_model = face_model if is_cascade_model else cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            )
+            scaleFactor = 1.1 if 'scaleFactor' not in kwargs else float(kwargs['scaleFactor'])
+            minNeighbors = 5 if 'minNeighbors' not in kwargs else int(kwargs['minNeighbors'])
+            minSize = (50,50) if 'minSize' not in kwargs else kwargs['minSize']
+            maxSize = image.shape[:2] if 'maxSize' not in kwargs else kwargs['maxSize']
+            faces = legacy_model.detectMultiScale(
+                image,
+                scaleFactor=scaleFactor,
+                minNeighbors=minNeighbors,
+                minSize=minSize,
+                maxSize=maxSize,
+            )
+            for bbox in faces:
+                ex_bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+                self.bboxs.append(ex_bbox)
+        else:
+            h, w = image.shape[:2]
+            score_threshold = float(kwargs.get('score_threshold', kwargs.get('thr', 0.6)))
+            nms_threshold = float(kwargs.get('nms_threshold', 0.3))
+            top_k = int(kwargs.get('top_k', 5000))
+            face_model.setInputSize((w, h))
+            face_model.setScoreThreshold(score_threshold)
+            face_model.setNMSThreshold(nms_threshold)
+            face_model.setTopK(top_k)
+            _, faces = face_model.detect(image)
+            if faces is not None:
+                for det in faces:
+                    x, y, bw, bh = det[:4]
+                    score = float(det[14]) if len(det) > 14 else None
+                    ex_bbox = [float(x), float(y), float(x + bw), float(y + bh)]
+                    self.bboxs.append(ex_bbox)
+                    self.scores.append(score)
 
         h,w,c = image.shape
         sketch_scale = max(1,(min(h,w)/ 100))
@@ -1449,7 +1577,13 @@ class Workflow:
             if self.classes is not None:
                 formalize_result = {
                     formalize_keys[language][0]:self.bboxs,
+                    formalize_keys[language][1]:self.scores,
                     formalize_keys[language][2]:self.classes,
+                }
+            elif len(self.scores) > 0:
+                formalize_result = {
+                    formalize_keys[language][0]:self.bboxs,
+                    formalize_keys[language][1]:self.scores,
                 }
             else:
                 formalize_result = {
@@ -2104,4 +2238,3 @@ def mmpose_postprocess(outputs: List[np.ndarray],
     keypoints = keypoints / model_input_size * scale + center - scale / 2
 
     return keypoints, scores
-
