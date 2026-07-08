@@ -64,14 +64,14 @@ Repository = "https://github.com/OpenXLab-Edu/XEdu-python"
 XEdu = "XEdu.version:hello"
 
 [tool.setuptools]
-packages = ["XEdu"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["XEdu*"]
 
 [tool.setuptools.package-data]
-XEdu = [
-    "hub/none.jpg",
-    "hub/font/*.ttf",
-    "examples/*.py",
-]
+"XEdu.hub" = ["none.jpg", "font/*.ttf"]
+"XEdu.hub.tokenizer" = ["*.txt", "*.gz"]
 
 [tool.black]
 line-length = 100

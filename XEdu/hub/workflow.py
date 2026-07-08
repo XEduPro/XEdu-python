@@ -313,6 +313,13 @@ class Workflow:
             checkpoint = os.path.join(path, checkpoint)
             _migrate_legacy_file(checkpoint, "checkpoint", "checkpoints")
             if not os.path.exists(checkpoint): # 本地未检测到模型，云端下载默认模型
+                if self.task == 'pose_face106':
+                    raise RuntimeError(
+                        "pose_face106 模型暂不支持自动下载：历史版本在此处错误地复用了 "
+                        "pose_wholebody133 的下载地址，会导致下载到错误的模型文件，因此改为"
+                        "显式报错而不是静默使用错误模型。请手动指定本地模型文件，例如："
+                        "wf(task='pose_face106', checkpoint='/path/to/face106.onnx')"
+                    )
                 print("本地未检测到{}任务对应模型，云端下载中...".format(self.task))
                 os.makedirs(path, exist_ok=True)
 
@@ -330,8 +337,10 @@ class Workflow:
                     'pose_body26':'/res/api/v1/file/creator/2de9dd14-93c7-4b89-ac79-da3231c79d01.onnx&name=pose_body26.onnx',
                     'pose_wholebody133':'/res/api/v1/file/creator/98e010a3-76f4-4209-bba9-33fba2fe1281.onnx&name=pose_wholebody133.onnx',
                     'pose_hand21':'/res/api/v1/file/creator/e5e5540b-3475-42f8-be0b-6ea8d46d577b.onnx&name=pose_hand21.onnx',
-                    'pose_face106':'/res/api/v1/file/creator/d7a3d6e2-4a8f-4c9a-b1e5-f9c3e8a2b4d1.onnx&name=pose_face106.onnx',
-                    
+                    # pose_face106 故意不在此列出：见上方对 self.task == 'pose_face106' 的
+                    # 显式 RuntimeError 短路检查，原因是原上游代码在此处错误复用了
+                    # pose_wholebody133 的下载地址。
+
                     'embedding_image':'/res/api/v1/file/creator/69aebb8e-3202-4022-9618-a64560ffef76.onnx&name=embedding_image.onnx',
                     'embedding_text':'/res/api/v1/file/creator/ce38d2ad-e8be-4e6a-990a-a6d818e5655b.onnx&name=embedding_text.onnx',
                     'embedding_audio':'/res/api/v1/file/creator/3fb25823-aeb7-4866-9617-937f5079af4a.onnx&name=embedding_audio.onnx',
