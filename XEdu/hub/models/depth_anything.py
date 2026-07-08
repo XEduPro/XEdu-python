@@ -253,8 +253,12 @@ def preprocess(img):
 def load_image(filepath):# -> tuple(np.ndarray, tuple(int, int)):
     if isinstance(filepath, str):    
         image = cv2.imread(filepath)  # H, W, C
+        if image is None:
+            raise ValueError(f"Failed to read image from path: {filepath}")
     else:
         image = filepath
+    if image is None:
+        raise ValueError("Input image is None.")
     orig_shape = image.shape[:2]
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0
     image = preprocess(image) # C, H, W
@@ -268,9 +272,18 @@ def da_onnx_infer(img: str, model: str, viz: bool = True):
     #     model, providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
     # )
     session = model
-    depth = session.run(None, {"image": image})[0]
-    depth = cv2.resize(depth[0, 0], (orig_w, orig_h))
-    depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
+    input_name = session.get_inputs()[0].name if hasattr(session, "get_inputs") else "image"
+    depth = session.run(None, {input_name: image})[0]
+    depth = np.squeeze(depth)
+    if depth.ndim != 2:
+        raise ValueError(f"Unexpected depth output shape: {depth.shape}")
+    depth = cv2.resize(depth, (orig_w, orig_h))
+    depth_min = depth.min()
+    depth_max = depth.max()
+    if depth_max == depth_min:
+        depth = np.zeros_like(depth, dtype=np.uint8)
+        return depth
+    depth = (depth - depth_min) / (depth_max - depth_min) * 255.0
     depth = depth.astype(np.uint8)
     # depth_color = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)
 

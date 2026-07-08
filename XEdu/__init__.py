@@ -12,10 +12,8 @@ def egg(seed):
         return 
     try:
         import holidays
-    except:
-        import os
-        os.system("pip install holidays -q")
-        import holidays
+    except ImportError:
+        return
     cn_holidays = holidays.China()
     today = date.today()
     next_day = today

@@ -3,9 +3,11 @@ from .base import BaseLLM
 import warnings
 try:
     from gradio_client import Client
-except:
-    os.system("pip install gradio-client -U")
-    from gradio_client import Client
+except ImportError as exc:
+    raise ImportError(
+        "Using an xedu_url requires the optional dependency 'gradio-client'. "
+        "Install it before creating a GradioClient."
+    ) from exc
     
 class GradioClient(BaseLLM):
     def __init__(self, base_url):
