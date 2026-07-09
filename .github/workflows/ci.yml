@@ -28,9 +28,36 @@ jobs:
 
     - name: Run pytest
       run: |
-        pytest tests/ -v --tb=short
+        pytest tests/ -v --tb=short --cov=XEdu --cov-report=term-missing
 
-    - name: Test packaging
+    - name: Verify handler modules import
+      run: |
+        python -c "from XEdu.hub.handlers.base import BaseHandler, ONNXHandler, DetectionHandler"
+        python -c "from XEdu.hub.handlers.detection import DetBodyHandler, DetCocoHandler, DetFaceHandler"
+        python -c "from XEdu.hub.model_discovery import support_tasks, describe_task"
+
+    - name: Verify wheel contains all subpackages
       run: |
         python -m build --wheel
+        python - <<'PY'
+        import zipfile, glob, sys
+        wheel = glob.glob("dist/*.whl")[0]
+        required = [
+            "XEdu/LLM/__init__.py",
+            "XEdu/LLM/client.py",
+            "XEdu/utils/__init__.py",
+            "XEdu/hub/models/__init__.py",
+            "XEdu/hub/BaseDT/__init__.py",
+            "XEdu/hub/handlers/__init__.py",
+            "XEdu/hub/model_registry.py",
+            "XEdu/hub/model_store.py",
+            "XEdu/hub/exceptions.py",
+        ]
+        names = zipfile.ZipFile(wheel).namelist()
+        missing = [r for r in required if r not in names]
+        if missing:
+            print("Missing from wheel:", missing)
+            sys.exit(1)
+        print("All required subpackages present in wheel.")
+        PY
         ls -lh dist/

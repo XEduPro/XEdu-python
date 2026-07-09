@@ -17,9 +17,9 @@ import os
 import numpy as np
 import onnxruntime as ort
 
-from .exceptions import XEduError, XEduDependencyError
-from .model_store import get_model_store, check_dependencies
-from .model_registry import get_default_model
+from ..exceptions import XEduError, XEduDependencyError
+from ..model_store import get_model_store, check_dependencies
+from ..model_registry import get_default_model
 
 
 class BaseHandler(ABC):

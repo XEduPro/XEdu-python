@@ -288,6 +288,26 @@ register_model(ModelMetadata(
     recommended_for=["high_accuracy"]
 ))
 
+register_model(ModelMetadata(
+    task_name="pose_face106",
+    model_id="pose_face106-default",
+    filename="face106.onnx",
+    source_url=None,
+    auto_download=False,
+    input_type="image",
+    output_type="pose",
+    tags=["vision", "pose", "face"],
+    description=(
+        "Face pose (106 keypoints). Automatic download is disabled: the "
+        "legacy download map incorrectly reused the pose_wholebody133 URL "
+        "for this task, which would silently install the wrong model. "
+        "A local checkpoint must be provided explicitly, e.g. "
+        "wf(task='pose_face106', checkpoint='/path/to/face106.onnx')."
+    ),
+    latency_tier="base",
+    recommended_for=[]
+))
+
 # 分类模型
 register_model(ModelMetadata(
     task_name="cls_imagenet",
@@ -303,12 +323,21 @@ register_model(ModelMetadata(
 ))
 
 # 生成类模型（风格迁移）
-for style in ["mosaic", "candy", "rain-princess", "udnie", "pointilism"]:
+# 真实下载地址来自 workflow.py 中的 model_name_map_download，
+# 与 workflow.py 保持一致，避免出现占位符 URL。
+_GEN_STYLE_ASSET_IDS = {
+    "mosaic": "965b190c-6008-43dd-a037-94a99e55f78a",
+    "candy": "bc24e059-131a-49d0-b663-45289156bbc9",
+    "rain-princess": "f193af6e-8eaf-43c1-913c-85b226da4e47",
+    "udnie": "3691c4c2-877b-4137-b621-7eb7dede54e3",
+    "pointilism": "9e5fb84f-fcd5-497f-a59f-9359e430e549",
+}
+for style, asset_id in _GEN_STYLE_ASSET_IDS.items():
     register_model(ModelMetadata(
         task_name=f"gen_style_{style}",
         model_id=f"gen_style_{style}-default",
         filename=f"gen_style_{style}.onnx",
-        source_url=f"https://www.openinnolab.org.cn/res/api/v1/file/creator/...&name=gen_style_{style}.onnx",
+        source_url=f"https://www.openinnolab.org.cn/res/api/v1/file/creator/{asset_id}.onnx&name=gen_style_{style}.onnx",
         input_type="image",
         output_type="image",
         tags=["vision", "generation", "style_transfer"],
@@ -332,15 +361,31 @@ register_model(ModelMetadata(
 ))
 
 # 分割模型
+# 注意：segment_anything 需要两个模型文件（encoder + decoder），
+# 当前 ModelMetadata 是单文件 schema，因此拆成两条记录挂在同一个 task_name 下，
+# 复用 get_models_by_task() 本身支持一对多的机制。
 register_model(ModelMetadata(
     task_name="segment_anything",
-    model_id="segment_anything-default",
-    filename="seg_sam",  # 特殊：两个文件
-    source_url="https://www.openinnolab.org.cn/...",
+    model_id="segment_anything-encoder",
+    filename="seg_sam_encoder.onnx",
+    source_url="https://www.openinnolab.org.cn/res/api/v1/file/creator/b0baaf01-8673-4762-a99b-f47661454395.onnx&name=seg_sam_encoder.onnx",
     input_type="image",
     output_type="segmentation",
     tags=["vision", "segmentation"],
-    description="SAM universal segmentation (supports prompt-guided)",
+    description="SAM universal segmentation (encoder half; requires segment_anything-decoder too)",
+    latency_tier="large",
+    recommended_for=["high_accuracy"]
+))
+
+register_model(ModelMetadata(
+    task_name="segment_anything",
+    model_id="segment_anything-decoder",
+    filename="seg_sam_decoder.onnx",
+    source_url="https://www.openinnolab.org.cn/res/api/v1/file/creator/70f02a96-6998-4196-92ac-c61a9a841c66.onnx&name=seg_sam_decoder.onnx",
+    input_type="image",
+    output_type="segmentation",
+    tags=["vision", "segmentation"],
+    description="SAM universal segmentation (decoder half; requires segment_anything-encoder too)",
     latency_tier="large",
     recommended_for=["high_accuracy"]
 ))
