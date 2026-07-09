@@ -11,6 +11,7 @@ XEdu 模型下载与缓存管理
 
 import os
 import hashlib
+import logging
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -24,6 +25,8 @@ from .exceptions import (
     XEduDependencyError,
 )
 from .model_registry import get_model, ModelMetadata
+
+logger = logging.getLogger("XEdu.hub.model_store")
 
 
 class ModelStore:
@@ -140,7 +143,7 @@ class ModelStore:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
 
-            print(f"Downloading {os.path.basename(local_path)}...")
+            logger.info("Downloading %s...", os.path.basename(local_path))
 
             # 用 tqdm 显示进度
             with open(local_path, "wb") as f:
@@ -154,7 +157,7 @@ class ModelStore:
             if checksum:
                 self._verify_checksum(local_path, checksum)
 
-            print(f"Model saved to {local_path}")
+            logger.info("Model saved to %s", local_path)
 
         except requests.RequestException as e:
             # 清理残留的不完整文件
