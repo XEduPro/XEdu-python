@@ -57,8 +57,8 @@ dev = [
 [project.urls]
 Homepage = "https://www.openinnolab.org.cn/pjedu/xedu/mmedu"
 Documentation = "https://xedu.readthedocs.io"
-Repository = "https://github.com/OpenXLab-Edu/XEdu-python"
-"Bug Tracker" = "https://github.com/OpenXLab-Edu/XEdu-python/issues"
+Repository = "https://github.com/XEduPro/XEdu-python"
+"Bug Tracker" = "https://github.com/XEduPro/XEdu-python/issues"
 
 [project.scripts]
 XEdu = "XEdu.version:hello"

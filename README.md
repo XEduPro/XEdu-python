@@ -214,7 +214,7 @@ MIT License
   title={XEdu-python: AI Education Toolkit for K-12},
   author={OpenXLab-Edu},
   year={2024},
-  url={https://github.com/OpenXLab-Edu/XEdu-python}
+  url={https://github.com/XEduPro/XEdu-python}
 }
 ```
 
