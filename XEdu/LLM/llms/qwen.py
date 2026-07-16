@@ -54,10 +54,11 @@ class Qwen(BaseLLM):
         # pattern = re.compile(r'"content":"(.*?)","role"')
 
         # http_response = []
+        import json
         for chunk in response.iter_lines(chunk_size=None):
             chunk = chunk.decode('utf-8')
             if chunk.startswith('data:'):
-                ch_dict = eval(chunk[5:])
+                ch_dict = json.loads(chunk[5:])
                 yield ch_dict['output']['choices'][0]['message']['content']
     
     def _set_url(self):

@@ -1,8 +1,0 @@
-include whl/*
-include XEdu/hub/none.jpg
-include XEdu/hub/*
-include XEdu/hub/font/*
-include XEdu/examples/demo.py
-prune XEdu/examples/*
-include install_requires.txt
-include XEdu/hub/tokenizer/*

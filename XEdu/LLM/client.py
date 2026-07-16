@@ -118,14 +118,11 @@ class Client:
             if gr.__version__ < "4.0.0":
                 raise ImportError
             block = gr.Blocks()
-        except:
-            subprocess.run([sys.executable, "-m", "pip", "install", "gradio", "-U"], check=True)
-            self._restart_script()
-            import importlib
-            importlib.invalidate_caches()  # 清理导入缓存
-            import gradio as gr
-            # 重新加载模块
-            importlib.reload(gr)
+        except ImportError as exc:
+            raise ImportError(
+                "Running the chat UI requires the optional dependency 'gradio>=4.0.0'. "
+                "Install it before calling Client.run()."
+            ) from exc
 
     def set_system(self,system_info):
         self.system_info = system_info

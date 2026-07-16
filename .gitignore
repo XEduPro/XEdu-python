@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+.venv/
+venv/
+
+build/
+dist/
+*.egg-info/
+
+xedu_outputs/
+getting_started_outputs/

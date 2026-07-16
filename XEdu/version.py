@@ -1,6 +1,6 @@
 import os
 
-__version__='0.2.3'
+__version__='2.1.0'
 __path__=os.path.abspath(os.getcwd())
 
 def parse_version_info(version_str):
