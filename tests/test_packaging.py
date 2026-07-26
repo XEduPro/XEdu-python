@@ -109,6 +109,12 @@ def test_gradio_is_available_only_through_optional_full_install():
     assert all(not item.startswith("gradio") for item in project["dependencies"])
 
 
+def test_development_extra_can_build_the_wheel():
+    dev_dependencies = load_pyproject()["project"]["optional-dependencies"]["dev"]
+
+    assert "build>=1.0,<2" in dev_dependencies
+
+
 def test_readme_documents_python_38_and_optional_full_installs():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
