@@ -21,15 +21,22 @@ XEdu-python 是一个面向中小学 AI 教学场景的模型推理和工具库�
 
 ## 安装
 
+`2.1` 源码分支支持 Python 3.8 及以上版本。`2.1.0` 尚未发布到 PyPI，
+当前可直接从 GitHub 源码安装全部功能：
+
 ```bash
-pip install XEdu-python
+python -m pip install --upgrade "XEdu-python[all] @ git+https://github.com/XEduPro/XEdu-python.git@2.1"
 ```
 
 ### 可选依赖
 
+- LLM 与 Gradio 聊天界面：`pip install XEdu-python[llm]`
 - OCR 任务：`pip install XEdu-python[ocr]`
 - 音频 embedding / 分类：`pip install XEdu-python[audio]`
-- 全部依赖：`pip install XEdu-python[all]`
+- OCR、音频和 Gradio 全部依赖：`pip install XEdu-python[all]`
+
+上述包名安装命令适用于 `2.1.0` 发布到 PyPI 之后；发布前请使用前面的
+GitHub 源码安装命令。
 
 ## 快速开始
 

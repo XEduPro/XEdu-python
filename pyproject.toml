@@ -7,7 +7,7 @@ name = "XEdu-python"
 version = "2.1.0"
 description = "XEdu: AI Education Toolkit for K-12"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "OpenXLab-Edu", email = "wangbolun@pjlab.org.cn"}
@@ -19,6 +19,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -28,8 +29,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy>=1.26,<2",
-    "matplotlib>=3.8",
+    "numpy>=1.24,<1.25; python_version < '3.9'",
+    "numpy>=1.26,<2; python_version >= '3.9'",
+    "matplotlib>=3.7,<3.8; python_version < '3.9'",
+    "matplotlib>=3.8; python_version >= '3.9'",
     "opencv-python>=4.8,<5",
     "onnxruntime>=1.17,<2",
     "pillow>=10.0,<13",
@@ -42,11 +45,14 @@ dependencies = [
 [project.optional-dependencies]
 ocr = ["rapidocr_onnxruntime>=1.4.4"]
 audio = ["soundfile>=0.12,<1"]
+llm = ["gradio>=4,<5"]
 all = [
     "rapidocr_onnxruntime>=1.4.4",
     "soundfile>=0.12,<1",
+    "gradio>=4,<5",
 ]
 dev = [
+    "build>=1.0,<2",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "black>=23.0",
@@ -76,7 +82,7 @@ include = ["XEdu*"]
 
 [tool.black]
 line-length = 100
-target-version = ["py39"]
+target-version = ["py38"]
 
 [tool.isort]
 profile = "black"

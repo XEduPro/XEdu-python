@@ -22,7 +22,9 @@ def test_getting_started_notebook_uses_packaged_example_assets():
         "".join(cell.get("source", [])) for cell in notebook["cells"]
     )
 
-    assert "files('XEdu.examples')" in source
+    assert "Path(XEdu.examples.__file__).resolve().parent / 'assets'" in source
+    assert "import XEdu.examples" in source
+    assert "from importlib.resources import files" not in source
     assert "outputs' / 'imagegen" not in source
     assert "find_project_root" not in source
     assert "import sys" in source
@@ -91,6 +93,9 @@ def test_getting_started_notebook_includes_the_full_feature_install_command():
     assert "f'{wheel_path}[all]'" in source
     assert "XEdu-python[all]" in source
     assert "--upgrade" in source
+    assert "OCR、音频和 Gradio" in source
+    assert "git+https://github.com/XEduPro/XEdu-python.git@2.1" in source
+    assert "folder / 'pyproject.toml'" in source
 
 
 def test_first_code_cell_can_install_the_local_wheel_with_current_python():

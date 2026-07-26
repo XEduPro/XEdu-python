@@ -15,12 +15,15 @@ that regression automatically.
 
 import subprocess
 import sys
-import sysconfig
-import tomllib
 import zipfile
 from pathlib import Path
 
 import pytest
+
+try:
+    import tomllib
+except ImportError:  # pragma: no cover - exercised only on Python 3.8-3.10
+    import tomli as tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -39,6 +42,11 @@ EXPECTED_SUBPACKAGES = [
     "XEdu/examples/assets/xedu-road-scene.png",
     "XEdu/examples/assets/xedu-ocr-poster.png",
 ]
+
+
+def load_pyproject():
+    with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
+        return tomllib.load(handle)
 
 
 @pytest.mark.slow
@@ -82,10 +90,41 @@ def test_setup_cfg_uses_automatic_package_discovery():
     assert "[tool.setuptools.packages.find]" in pyproject
 
 
-def test_package_data_includes_the_bundled_uppercase_font_extension():
-    with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
-        config = tomllib.load(handle)
+def test_project_supports_python_38_with_compatible_scientific_dependencies():
+    project = load_pyproject()["project"]
 
+    assert project["requires-python"] == ">=3.8"
+    assert "numpy>=1.24,<1.25; python_version < '3.9'" in project["dependencies"]
+    assert "numpy>=1.26,<2; python_version >= '3.9'" in project["dependencies"]
+    assert "matplotlib>=3.7,<3.8; python_version < '3.9'" in project["dependencies"]
+    assert "matplotlib>=3.8; python_version >= '3.9'" in project["dependencies"]
+
+
+def test_gradio_is_available_only_through_optional_full_install():
+    project = load_pyproject()["project"]
+    extras = project["optional-dependencies"]
+
+    assert "gradio>=4,<5" in extras["llm"]
+    assert "gradio>=4,<5" in extras["all"]
+    assert all(not item.startswith("gradio") for item in project["dependencies"])
+
+
+def test_development_extra_can_build_the_wheel():
+    dev_dependencies = load_pyproject()["project"]["optional-dependencies"]["dev"]
+
+    assert "build>=1.0,<2" in dev_dependencies
+
+
+def test_readme_documents_python_38_and_optional_full_installs():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "Python 3.8" in readme
+    assert "pip install XEdu-python[llm]" in readme
+    assert "pip install XEdu-python[all]" in readme
+
+
+def test_package_data_includes_the_bundled_uppercase_font_extension():
+    config = load_pyproject()
     package_data = config["tool"]["setuptools"]["package-data"]
     assert "font/*.TTF" in package_data["XEdu.hub"]
     assert "getting_started.ipynb" in package_data["XEdu.examples"]
