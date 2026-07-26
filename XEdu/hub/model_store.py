@@ -13,7 +13,7 @@ import os
 import hashlib
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -32,9 +32,12 @@ logger = logging.getLogger("XEdu.hub.model_store")
 class ModelStore:
     """模型存储与管理"""
 
-    def __init__(self):
+    def __init__(self, cache_dir: Optional[str] = None):
         """初始化缓存目录"""
-        self.cache_dir = self._resolve_cache_dir()
+        if cache_dir is None:
+            self.cache_dir = self._resolve_cache_dir()
+        else:
+            self.cache_dir = os.path.abspath(os.path.expanduser(cache_dir))
         os.makedirs(self.cache_dir, exist_ok=True)
 
     @staticmethod
@@ -108,10 +111,37 @@ class ModelStore:
                 f"Model '{model_id}' has no download URL in registry"
             )
 
-        # 下载模型
-        self.download(metadata.source_url, local_path, metadata.checksum)
+        # 下载模型。先尝试主源，再按顺序回退到镜像源。
+        self.download_from_sources(
+            [metadata.source_url, *metadata.mirror_urls],
+            local_path,
+            metadata.checksum,
+        )
 
         return local_path
+
+    def download_from_sources(
+        self,
+        urls: Iterable[str],
+        local_path: str,
+        checksum: Optional[str] = None,
+    ) -> None:
+        """按顺序尝试多个下载源。"""
+        errors = []
+        for url in urls:
+            if not url:
+                continue
+            try:
+                self.download(url, local_path, checksum)
+                return
+            except XEduModelDownloadError as exc:
+                errors.append(f"{url}: {exc}")
+                logger.warning("Download failed from %s, trying next mirror if available.", url)
+
+        raise XEduModelDownloadError(
+            "Failed to download model from all configured sources:\n"
+            + "\n".join(errors)
+        )
 
     def download(
         self,

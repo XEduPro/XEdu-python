@@ -63,3 +63,6 @@ checkpoints/
 *.ipynb_checkpoints/
 *.onnx
 font/
+output/
+outputs/
+tmp/

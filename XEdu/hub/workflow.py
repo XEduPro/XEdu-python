@@ -5,6 +5,7 @@ import json
 import numpy as np
 import warnings
 import ast
+import logging
 if TYPE_CHECKING:
     from matplotlib.backends.backend_agg import FigureCanvasAgg
 import onnxruntime as ort
@@ -24,7 +25,20 @@ import requests
 from tqdm import tqdm
 from .models import efficientVIT_sam as sam
 from .errorcode import ErrorCodeFactory as ecf
+from .handlers.audio import (
+    AudioEmbeddingHandler,
+    AudioKeywordDetectionHandler,
+    AudioPrototypeClassificationHandler,
+)
+from .handlers.detection import DetBodyHandler, DetCocoHandler, DetFaceHandler, PalmHandDetectorHandler
+from .handlers.face_landmark import PoseFaceLandmarkHandler
+from .handlers.multimodal import ImageTextMatchingHandler
+from .handlers.nlp import TextEmbeddingHandler, TextPrototypeClassificationHandler
+from .handlers.pose import PoseBody17Handler
+from .model_registry import get_default_model, get_model
+from .model_store import ModelStore
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 def _xedu_home_dir() -> str:
     custom_home = os.environ.get("XEDU_HOME")
@@ -70,6 +84,29 @@ def _migrate_legacy_directory(target_dir: str, *legacy_dir_names: str) -> None:
             shutil.copytree(legacy_dir, target_dir)
             return
 
+def _download_registry_metadata(metadata, local_path: str, cache_dir: str) -> Optional[str]:
+    if metadata is None or not metadata.auto_download or not metadata.source_url:
+        return None
+
+    local_path = os.path.abspath(os.path.expanduser(local_path))
+    store = ModelStore(cache_dir)
+    default_store_path = os.path.abspath(os.path.join(store.cache_dir, metadata.filename))
+    if default_store_path == local_path:
+        return store.get_model_path(metadata.model_id, auto_download=True)
+
+    store.download_from_sources(
+        [metadata.source_url, *metadata.mirror_urls],
+        local_path,
+        metadata.checksum,
+    )
+    return local_path
+
+def _download_registered_task_model(task_name: str, local_path: str, cache_dir: str) -> Optional[str]:
+    return _download_registry_metadata(get_default_model(task_name), local_path, cache_dir)
+
+def _download_registered_model(model_id: str, local_path: str, cache_dir: str) -> Optional[str]:
+    return _download_registry_metadata(get_model(model_id), local_path, cache_dir)
+
 def to_batches(items: Iterable[T], size: int) -> Iterator[List[T]]:
     """
     Splits an iterable (e.g. a list) into batches of length `size`. Includes
@@ -108,12 +145,13 @@ task_dict = {
         "pose_body26":"body26.onnx",
         "pose_wholebody133":"whole133.onnx",
         "pose_face106":"face106.onnx",
+        "pose_face":"face_landmark106_mobilenet.onnx",
         "pose_hand21":"hand21.onnx",
         "det_body":"bodydetect.onnx",
         "det_body_l":"bodydetect_l.onnx",
         "det_coco":"cocodetect.onnx",
         "det_coco_l":"cocodetect_l.onnx",
-        "det_hand":"handdetect.onnx",
+        "det_hand":"palm_detection_full_inf_post_192x192.onnx",
         "cls_imagenet":"imagenet1k.onnx",
         "gen_style":"gen_style_mosaic.onnx",
         "gen_style_mosaic":"gen_style_mosaic.onnx",
@@ -126,7 +164,11 @@ task_dict = {
         "drive_perception":"drive_perception.onnx",
         "embedding_image":"embedding_image.onnx",
         "embedding_text":"embedding_text.onnx",
+        "cls_text":"embedding_text.onnx",
         "embedding_audio":"embedding_audio.onnx",
+        "cls_audio":"embedding_audio.onnx",
+        "det_audio_keyword":"embedding_audio.onnx",
+        "match_image_text":["embedding_image.onnx", "embedding_text.onnx"],
         "gen_color":"gen_color.onnx",
         "segment_anything":['seg_sam_encoder.onnx','seg_sam_decoder.onnx'],
         "depth_anything":"depth_anything.onnx",
@@ -139,6 +181,20 @@ task_dict = {
 }
 style_list = ['mosaic','candy','rain-princess','udnie','pointilism']
 FACE_DET_LEGACY_PARAMS = {"scaleFactor", "minNeighbors", "minSize", "maxSize"}
+HANDLER_TASKS = {
+    "embedding_audio": AudioEmbeddingHandler,
+    "cls_audio": AudioPrototypeClassificationHandler,
+    "det_audio_keyword": AudioKeywordDetectionHandler,
+    "det_body": DetBodyHandler,
+    "det_coco": DetCocoHandler,
+    "det_face": DetFaceHandler,
+    "det_hand": PalmHandDetectorHandler,
+    "embedding_text": TextEmbeddingHandler,
+    "match_image_text": ImageTextMatchingHandler,
+    "pose_body17": PoseBody17Handler,
+    "pose_face": PoseFaceLandmarkHandler,
+    "cls_text": TextPrototypeClassificationHandler,
+}
 
 class Downloader(object):
     def __init__(self, url, file_path,model_name=None,output_dir='checkpoints',overwrite=False):
@@ -158,7 +214,11 @@ class Downloader(object):
             temp_size = os.path.getsize(self.file_path)
         else:
             temp_size = 0
-        print(f"model_repo:xedu/hub-model, model_name:{self.model_name}, output:{self.output_dir}, overwrite:False")
+        logger.info(
+            "model_repo:xedu/hub-model, model_name:%s, output:%s, overwrite:False",
+            self.model_name,
+            self.output_dir,
+        )
         headers = {'Range': 'bytes=%d-' % temp_size,
                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:81.0) Gecko/20100101 Firefox/81.0"}
         res_left = requests.get(self.url, stream=True, headers=headers)
@@ -172,7 +232,7 @@ class Downloader(object):
                 f.write(chunk)
                 
         progress_bar.close()
-        print(f"download model repo:xedu/hub-model, file_name:{self.model_name} ")
+        logger.info("download model repo:xedu/hub-model, file_name:%s", self.model_name)
 
 class Workflow:
     """
@@ -182,7 +242,8 @@ class Workflow:
             - pose_body17_l：人体关键点检测，17个关键点，模型更大
             - pose_body26：人体关键点检测，26个关键点
             - pose_wholebody133：全身关键点检测，包括人体、人脸和手部共133个关键点
-            - pose_face106：人脸关键点检测，106个关键点
+            - pose_face：人脸关键点检测，默认 MobileNet 106，可选 PIPNet/WFLW-98 高精度模型
+            - pose_face106：旧版人脸关键点检测，需显式提供本地模型
             - pose_hand21：手部关键点检测，21个关键点
             - det_body：人体检测
             - det_body_l：人体检测，模型更大
@@ -248,7 +309,11 @@ class Workflow:
             'body':"pose_body17",
             'body_l':"pose_body17_l",
             'pose_body_l':"pose_body17_l",
-            "face":"pose_face106",
+            "face":"pose_face",
+            "face_landmark":"pose_face",
+            "face_landmarks":"pose_face",
+            "face_keypoint":"pose_face",
+            "face_keypoints":"pose_face",
             "hand":"pose_hand21",
             "wholebody":"pose_wholebody133",
             "face106":"pose_face106",
@@ -259,7 +324,7 @@ class Workflow:
             'pose_hand':"pose_hand21",
             'pose_body':"pose_body17",
             "pose_wholebody":"pose_wholebody133",
-            "pose_face":"pose_face106",
+            "pose_face_landmark":"pose_face",
             "handdetect":"det_hand",
             "cocodetect":"det_coco",
             "facedetect":"det_face",
@@ -274,6 +339,7 @@ class Workflow:
             self.task = self.task_nick_name[task]
         else:
             self.task = task
+        self.handler = None
         self.color_dict = {
             'red':[255,0,0],
             'orange':[255,125,0],
@@ -293,6 +359,18 @@ class Workflow:
             self.questions = []
             self.contexts = []
             self.doc = None
+        if self.task in HANDLER_TASKS:
+            handler_cls = HANDLER_TASKS[self.task]
+            self.handler = handler_cls(checkpoint=checkpoint, download_path=path, **kwargs)
+            self.model = self.handler.model
+            if (
+                self.task[:3] in ['det','cls']
+                and 'face' not in self.task
+                and hasattr(self.model, "get_modelmeta")
+            ):
+                self._check_mmedu(self.model)
+            logger.info("%s任务模型加载成功！", self.task)
+            return
         default_task = ['embedding_audio','depth_anything','det_body','det_body_l','det_coco','det_coco_l','pose_body17','pose_body17_l','pose_body26','pose_wholebody133','pose_face106','pose_hand21','det_hand','cls_imagenet','gen_style','nlp_qa','drive_perception','embedding_image','embedding_text','gen_color']
         
         if checkpoint is None and self.task in default_task: # 若不指定权重文件，则使用对应任务的默认模型
@@ -320,48 +398,16 @@ class Workflow:
                         "显式报错而不是静默使用错误模型。请手动指定本地模型文件，例如："
                         "wf(task='pose_face106', checkpoint='/path/to/face106.onnx')"
                     )
-                print("本地未检测到{}任务对应模型，云端下载中...".format(self.task))
+                logger.info("本地未检测到%s任务对应模型，云端下载中...", self.task)
                 os.makedirs(path, exist_ok=True)
-
-                baseurl='https://www.openinnolab.org.cn/'
-                model_name_map_download ={
-                    'cls_imagenet':'/res/api/v1/file/creator/09a4c4f4-7034-45a5-a0c1-a747da5a2766.onnx&name=cls_imagenet.onnx',    
-                    'det_body':'/res/api/v1/file/creator/8137e4ca-482d-48fa-b57f-bfa50f7768be.onnx&name=det_body.onnx',
-                    'det_body_l':'/res/api/v1/file/creator/d6d5680e-b3ef-4624-9a9f-52f1892f0045.onnx&name=det_body_l.onnx',
-                    'det_coco':'/res/api/v1/file/creator/e4c39ead-ff3b-4810-ab4d-a8f3757ff1bb.onnx&name=det_coco.onnx',
-                    'det_coco_l':'/res/api/v1/file/creator/8be89312-4ff7-4dc7-ba19-7d759d8e713a.onnx&name=det_coco_l.onnx',
-                    'det_hand':'/res/api/v1/file/creator/6172ad06-8a97-4d47-bcc3-cdbdda0c0187.onnx&name=det_hand.onnx',
-                    
-                    'pose_body17':'/res/api/v1/file/creator/b94f252e-03de-4491-b9f3-042c57c7671f.onnx&name=pose_body17.onnx',
-                    'pose_body17_l':'/res/api/v1/file/creator/8e71a720-e87b-42e7-8498-8a6d07473941.onnx&name=pose_body17_l.onnx',
-                    'pose_body26':'/res/api/v1/file/creator/2de9dd14-93c7-4b89-ac79-da3231c79d01.onnx&name=pose_body26.onnx',
-                    'pose_wholebody133':'/res/api/v1/file/creator/98e010a3-76f4-4209-bba9-33fba2fe1281.onnx&name=pose_wholebody133.onnx',
-                    'pose_hand21':'/res/api/v1/file/creator/e5e5540b-3475-42f8-be0b-6ea8d46d577b.onnx&name=pose_hand21.onnx',
-                    # pose_face106 故意不在此列出：见上方对 self.task == 'pose_face106' 的
-                    # 显式 RuntimeError 短路检查，原因是原上游代码在此处错误复用了
-                    # pose_wholebody133 的下载地址。
-
-                    'embedding_image':'/res/api/v1/file/creator/69aebb8e-3202-4022-9618-a64560ffef76.onnx&name=embedding_image.onnx',
-                    'embedding_text':'/res/api/v1/file/creator/ce38d2ad-e8be-4e6a-990a-a6d818e5655b.onnx&name=embedding_text.onnx',
-                    'embedding_audio':'/res/api/v1/file/creator/3fb25823-aeb7-4866-9617-937f5079af4a.onnx&name=embedding_audio.onnx',
-                    
-                    'gen_color':'/res/api/v1/file/creator/733caa05-0357-4e52-a7b0-ce9a9419f959.onnx&name=gen_color.onnx',
-                    'gen_style_candy':'/res/api/v1/file/creator/bc24e059-131a-49d0-b663-45289156bbc9.onnx&name=gen_style_candy.onnx',
-                    'gen_style_mosaic':'/res/api/v1/file/creator/965b190c-6008-43dd-a037-94a99e55f78a.onnx&name=gen_style_mosaic.onnx',
-                    'gen_style_pointilism':'/res/api/v1/file/creator/9e5fb84f-fcd5-497f-a59f-9359e430e549.onnx&name=gen_style_pointilism.onnx',
-                    'gen_style_rain-princess':'/res/api/v1/file/creator/f193af6e-8eaf-43c1-913c-85b226da4e47.onnx&name=gen_style_rain-princess.onnx',
-                    'gen_style_udnie':'/res/api/v1/file/creator/3691c4c2-877b-4137-b621-7eb7dede54e3.onnx&name=gen_style_udnie.onnx',
-                    'gen_style_custom':'/res/api/v1/file/creator/17b8f5e6-94b6-44a3-b15b-486f6fc6a142.onnx&name=gen_style_custom.onnx',
-                                        
-                    'drive_perception':'/res/api/v1/file/creator/add78652-51c0-41e3-ab56-a52dd7374e54.onnx&name=drive_perception.onnx',
-                    
-                    'nlp_qa':'/res/api/v1/file/creator/b1938fd0-6ffa-4c91-a98e-170cd3b1c520.onnx&name=nlp_qa.onnx',
-                    'depth_anything':'/res/api/v1/file/creator/ffa0880a-4900-4ef5-8106-562eb14e7e8e.onnx&name=depth_anything.onnx'
-                }
-                for key in model_name_map_download.keys():
-                    model_name_map_download[key] = baseurl + model_name_map_download[key]
-                downloader = Downloader(model_name_map_download[self.task], os.path.join(path, self.task_dict[self.task]),output_dir=path)
-                downloader.start()
+                downloaded_checkpoint = _download_registered_task_model(
+                    self.task,
+                    checkpoint,
+                    path,
+                )
+                if downloaded_checkpoint is None:
+                    raise RuntimeError(f"No registered download source for task: {self.task}")
+                checkpoint = downloaded_checkpoint
 
             if self.task == 'embedding_audio':
                 from .models.clap import CLAP
@@ -380,7 +426,7 @@ class Workflow:
                     )
                     os.makedirs(os.path.dirname(checkpoint) or ".", exist_ok=True)
                     if not os.path.exists(checkpoint):
-                        print("本地未检测到{}任务对应模型，云端下载中...".format(self.task))
+                        logger.info("本地未检测到%s任务对应模型，云端下载中...", self.task)
                         downloader = Downloader(
                             detector_url,
                             checkpoint,
@@ -394,7 +440,7 @@ class Workflow:
                     except cv2.error:
                         if os.path.exists(checkpoint):
                             os.remove(checkpoint)
-                        print("det_face模型文件损坏，重新下载中...")
+                        logger.info("det_face模型文件损坏，重新下载中...")
                         downloader = Downloader(
                             detector_url,
                             checkpoint,
@@ -415,7 +461,7 @@ class Workflow:
                 self.model = RapidOCR(text_score=0.2)
         elif self.task.lower() == "mmedu":
             if checkpoint is None:
-                print("请先指定通过MMEdu导出的onnx模型路径。")
+                logger.info("请先指定通过MMEdu导出的onnx模型路径。")
                 return
             assert os.path.exists(checkpoint),ecf.NO_SUCH_CHECKPOINT(checkpoint)
             assert os.path.splitext(checkpoint)[-1]==".onnx",ecf.CHECKPOINT_TYPE(os.path.splitext(checkpoint)[-1].strip("."))
@@ -423,7 +469,7 @@ class Workflow:
             self.model = bd(checkpoint)
         elif self.task == 'baseml':
             if checkpoint is None:
-                print("请先指定通过BaseML导出的pkl模型路径。")
+                logger.info("请先指定通过BaseML导出的pkl模型路径。")
                 return
             assert os.path.exists(checkpoint),ecf.NO_SUCH_CHECKPOINT(checkpoint)
             assert os.path.splitext(checkpoint)[-1]==".pkl",ecf.CHECKPOINT_TYPE(os.path.splitext(checkpoint)[-1].strip("."))
@@ -442,7 +488,7 @@ class Workflow:
                 try:
                     self.demo_input = model['demo_input']
                     self.input_shape = model['input_shape']
-                except:
+                except KeyError:
                     pass
             else:
                 self.model = model
@@ -451,20 +497,29 @@ class Workflow:
                 checkpoint = [os.path.join(path, task_dict[self.task][0]),os.path.join(path, task_dict[self.task][1])]
             else:
                 assert isinstance(checkpoint,list) and len(checkpoint)==2, "checkpoint should be a list of two paths for encoder and decoder."
-            decoder_url = 'https://www.openinnolab.org.cn/res/api/v1/file/creator/70f02a96-6998-4196-92ac-c61a9a841c66.onnx&name=seg_sam_decoder.onnx'
-            encoder_url  ='https://www.openinnolab.org.cn//res/api/v1/file/creator/b0baaf01-8673-4762-a99b-f47661454395.onnx&name=seg_sam_encoder.onnx'
             _migrate_legacy_file(checkpoint[0], "checkpoint", "checkpoints")
             _migrate_legacy_file(checkpoint[1], "checkpoint", "checkpoints")
             if not os.path.exists(checkpoint[0]):
-                print("本地未检测到{}任务对应encoder模型，云端下载中...".format(self.task))
-                if not os.path.exists(path):
-                    os.mkdir(path)
-                downloader = Downloader(encoder_url, checkpoint[0],output_dir=path)
-                downloader.start()
+                logger.info("本地未检测到%s任务对应encoder模型，云端下载中...", self.task)
+                os.makedirs(path, exist_ok=True)
+                downloaded_encoder = _download_registered_model(
+                    "segment_anything-encoder",
+                    checkpoint[0],
+                    path,
+                )
+                if downloaded_encoder is None:
+                    raise RuntimeError("No registered download source for segment_anything encoder")
+                checkpoint[0] = downloaded_encoder
             if not os.path.exists(checkpoint[1]):
-                print("本地未检测到{}任务对应decoder模型，云端下载中...".format(self.task))
-                downloader = Downloader(decoder_url, checkpoint[1],output_dir=path)
-                downloader.start()
+                logger.info("本地未检测到%s任务对应decoder模型，云端下载中...", self.task)
+                downloaded_decoder = _download_registered_model(
+                    "segment_anything-decoder",
+                    checkpoint[1],
+                    path,
+                )
+                if downloaded_decoder is None:
+                    raise RuntimeError("No registered download source for segment_anything decoder")
+                checkpoint[1] = downloaded_decoder
             self.model = [sam.SamEncoder(model_path=checkpoint[0]),sam.SamDecoder(model_path=checkpoint[1])]
         else:
             assert os.path.exists(checkpoint),ecf.NO_SUCH_CHECKPOINT(checkpoint)
@@ -472,7 +527,7 @@ class Workflow:
             self.model = ort.InferenceSession(checkpoint, None)
         if self.task[:3] in ['det','cls'] and 'face' not in self.task:
             self._check_mmedu(self.model)
-        print(f"{self.task}任务模型加载成功！")
+        logger.info("%s任务模型加载成功！", self.task)
     
     def _check_mmedu(self,model):
         model_meta = model.get_modelmeta()
@@ -483,7 +538,104 @@ class Workflow:
             info = f'Error code: -311. Input task type "{self.task}" does not match the model which is generated by MMEdu. Please set task="mmedu" instead of "{self.task}".'
             raise ValueError(info)
             # print(f'Model info: {unicode_string[:100] + "..." if len(unicode_string) > 100 else unicode_string}')
-            
+
+    def _handler_detection_infer(self, data=None, show=False, get_img=None, threshold=0.5, target_class=None, **kwargs):
+        if self.task in ['det_body', 'det_coco', 'det_hand']:
+            boxes, scores, classes = self.handler.inference(
+                data,
+                threshold=threshold,
+                target_class=target_class,
+            )
+        else:
+            boxes, scores, classes = self.handler.inference(data, thr=threshold, **kwargs)
+
+        self.bboxs = boxes.tolist() if isinstance(boxes, np.ndarray) else boxes
+        self.scores = scores.tolist() if isinstance(scores, np.ndarray) else scores
+        if classes is None:
+            self.classes = None
+        else:
+            self.classes = classes.tolist() if isinstance(classes, np.ndarray) else classes
+
+        if get_img:
+            image = cv2.imread(data) if isinstance(data, str) else copy.copy(data)
+            if self.task == 'det_face':
+                h, w, _ = image.shape
+                sketch_scale = max(1, (min(h, w) / 100))
+                for [a, b, c, d] in self.bboxs:
+                    cv2.rectangle(
+                        image,
+                        (int(a), int(b)),
+                        (int(c), int(d)),
+                        (0, 0, 255),
+                        thickness=max(1, int(sketch_scale / 2)),
+                    )
+                if get_img == 'pil':
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            elif get_img == 'cv2':
+                for i, [a, b, c, d] in enumerate(self.bboxs):
+                    if self.task == 'det_coco':
+                        image = pil_draw(
+                            image,
+                            bbox1=(int(a), int(b), int(c), int(d)),
+                            label1=str(self.classes[i]),
+                        )
+                    else:
+                        cv2.rectangle(image, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
+            elif get_img == 'pil':
+                for i, [a, b, c, d] in enumerate(self.bboxs):
+                    if self.task == 'det_coco':
+                        image = pil_draw(
+                            image,
+                            bbox1=(int(a), int(b), int(c), int(d)),
+                            label1=str(self.classes[i]),
+                        )
+                    else:
+                        cv2.rectangle(image, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            if show:
+                self.show(image)
+            return np.array(self.bboxs), image
+
+        return np.array(self.bboxs)
+
+    def _handler_pose_infer(self, data=None, show=False, get_img=None, bbox=None):
+        self.bbox = bbox
+        self.data = data
+        self.keypoints, self.scores = self.handler.inference(data, bbox=bbox)
+        if getattr(self.keypoints, "shape", (0,))[0] == 0:
+            if get_img:
+                re = self._get_image()
+                if show:
+                    self.show(re)
+                return self.keypoints, re
+            return self.keypoints
+        if get_img:
+            re = self._get_image()
+            if show:
+                self.show(re)
+            return self.keypoints[0], re
+        return self.keypoints[0]
+
+    def _handler_audio_infer(self, data=None, **kwargs):
+        if self.task == 'embedding_audio':
+            self.audio_embedding = self.handler.inference(data)
+            return self.audio_embedding
+
+        self.audio_result = self.handler.inference(data, **kwargs)
+        return self.audio_result
+
+    def _handler_text_infer(self, data=None, **kwargs):
+        if self.task == 'embedding_text':
+            self.text_embedding = self.handler.inference(data)
+            return self.text_embedding
+
+        self.text_result = self.handler.inference(data, **kwargs)
+        return self.text_result
+
+    def _handler_multimodal_infer(self, data=None, **kwargs):
+        self.multimodal_result = self.handler.inference(data, **kwargs)
+        return self.multimodal_result
+
 
     def inference(self,data=None,show=False,img_type=None,thr=0.3,bbox=None,target_class=None,erase=False,
                   preprocess=None, postprocess=None,**kwargs):
@@ -491,18 +643,22 @@ class Workflow:
         self.erase=erase
         if self.repo is not None:
             return self.model.inference(data,**kwargs)
-        if isinstance(data,str) and self.task not in ['nlp_qa','embedding_text','embedding_audio']:
+        if isinstance(data,str) and self.task not in ['nlp_qa','embedding_text','cls_text','embedding_audio','cls_audio','det_audio_keyword']:
             assert os.path.exists(data),ecf.NO_SUCH_FILE(data)
             filetype = ['.jpg','.png','.jpeg','.jiff']
             assert os.path.splitext(data.lower())[-1] in filetype,ecf.INFER_DATA_TYPE(os.path.splitext(data)[-1].strip("."))
 
 
-        if self.task in ["pose_body17","pose_body26","pose_face106","pose_hand21","pose_wholebody133","pose_body17_l"]:
+        if self.task in ["pose_body17", "pose_face"]:
+            return self._handler_pose_infer(data, show, img_type, bbox)
+        elif self.task in ["pose_body26","pose_face106","pose_hand21","pose_wholebody133","pose_body17_l"]:
             return self._pose_infer(data,show,img_type,bbox)
-        elif self.task in['det_body','det_coco','det_hand','det_body_l','det_coco_l']:
+        elif self.task in ['det_body', 'det_coco', 'det_hand']:
+            return self._handler_detection_infer(data, show, img_type, thr, target_class)
+        elif self.task in ['det_body_l','det_coco_l']:
             return self._det_infer(data,show,img_type,thr,target_class)
         elif self.task in ['det_face']:
-            return self._face_det_infer(data,show,img_type,**kwargs)
+            return self._handler_detection_infer(data, show, img_type, thr, target_class, **kwargs)
         elif self.task in ['cls_imagenet']:
             return self._cls_infer(data,show, img_type)
         elif self.task in ['gen_style_mosaic','gen_style_candy','gen_style_rain-princess','gen_style_udnie','gen_style_pointilism','gen_style_custom']:
@@ -541,11 +697,11 @@ class Workflow:
             self._batch_size = 16
             return self._embedding_image_infer(data)
         elif self.task in ['embedding_text']:
-            if isinstance(data, str): # 单个文本
-                data = [data]
-            self._tokenizer = Tokenizer()
-            self._batch_size = 16
-            return self._embedding_text_infer(data)
+            return self._handler_text_infer(data)
+        elif self.task in ['cls_text']:
+            return self._handler_text_infer(data, **kwargs)
+        elif self.task in ['match_image_text']:
+            return self._handler_multimodal_infer(data, **kwargs)
         elif self.task in ['gen_color']:
             return self._gen_color_infer(data,show,img_type)
         elif self.task in ['segment_anything']:
@@ -553,7 +709,11 @@ class Workflow:
         elif self.task in ['depth_anything']:
             return self._mde_da_infer(data,show,img_type)
         elif self.task in ['embedding_audio']:
-            return self._embedding_audio_infer(data)
+            return self._handler_audio_infer(data)
+        elif self.task in ['cls_audio']:
+            return self._handler_audio_infer(data, **kwargs)
+        elif self.task in ['det_audio_keyword']:
+            return self._handler_audio_infer(data, **kwargs)
         else:
             raise NotImplementedError
 
@@ -916,13 +1076,13 @@ class Workflow:
             self.questions = []
             with open(data, "r") as f:
                 input_data = json.load(f)["data"]
-            print("inout",input_data)
+            logger.debug("inout %s", input_data)
             for idx, entry in enumerate(input_data):
                 for paragraph in entry["paragraphs"]:
                     for qa in paragraph["qas"]:
                         qas_id = qa["id"]
                         question_text = qa["question"]
-                        print("question_text",question_text)
+                        logger.debug("question_text %s", question_text)
                         self.questions.append(question_text)
         else:   
             self.questions.append(data)
@@ -1465,7 +1625,7 @@ class Workflow:
                 'purple':[[5,7],[9,7]],
             }
             ratio = 0.3
-        elif self.task == 'pose_face106':
+        elif self.task in ['pose_face106', 'pose_face']:
             ratio = 0.3
         if isinstance(self.data,str):
             img = cv2.imread((self.data))
@@ -1543,7 +1703,9 @@ class Workflow:
     
     def format_output(self,lang='zh',isprint=True, **kwargs): # check
         language = lang
-        if self.task in ["pose_body17","pose_body26","pose_face106","pose_hand21","pose_wholebody133","pose_body17_l"]:
+        if self.task == "pose_face":
+            formalize_result = self.handler.format_output((self.keypoints, self.scores), lang=language)
+        elif self.task in ["pose_body17","pose_body26","pose_face106","pose_hand21","pose_wholebody133","pose_body17_l"]:
             formalize_keys = {
                 "zh":["关键点坐标","分数"],
                 "en":["keypoints","scores"],
@@ -1626,7 +1788,7 @@ class Workflow:
             for i,idx in enumerate(res_idx):
                 try:
                     pred = self.ix2word[idx]
-                except:
+                except (KeyError, TypeError, IndexError):
                     pred = idx
                 formalize_result[i] ={formalize_keys[lang][0]:pred,formalize_keys[lang][1]:self.basenn_res[0][i][idx]} 
         elif self.task in ['baseml']:
@@ -1660,6 +1822,18 @@ class Workflow:
             formalize_result = self.color_res
         elif self.task in ['depth_anything']:
             formalize_result = self.depth_res
+        elif self.task in ['embedding_audio']:
+            formalize_result = self.handler.format_output(self.audio_embedding, lang=language)
+        elif self.task in ['cls_audio']:
+            formalize_result = self.handler.format_output(self.audio_result, lang=language)
+        elif self.task in ['det_audio_keyword']:
+            formalize_result = self.handler.format_output(self.audio_result, lang=language)
+        elif self.task in ['embedding_text']:
+            formalize_result = self.handler.format_output(self.text_embedding, lang=language)
+        elif self.task in ['cls_text']:
+            formalize_result = self.handler.format_output(self.text_result, lang=language)
+        elif self.task in ['match_image_text']:
+            formalize_result = self.handler.format_output(self.multimodal_result, lang=language)
         elif self.task in ['nlp_qa']:
             formalize_keys = {
                 "zh":["问题","回答","文本","分数","上下文"],
@@ -1713,7 +1887,7 @@ class Workflow:
         if isprint:
             try:
                 pprint.pprint(formalize_result,sort_dicts=False)
-            except:
+            except TypeError:
                 pprint.pprint(formalize_result)
         return formalize_result
 
@@ -1726,9 +1900,11 @@ def pil_draw(img, bbox1, label1):
     font = ImageFont.truetype(font=font_path, size=np.floor(1.5e-2 * np.shape(im)[1] + 15).astype('int32'))
 
     draw = ImageDraw.Draw(im)
-    # 获取label长宽
-    label_size1 = draw.textsize(label1, font)
-    # label_size2 = draw.textsize(label2, font)
+    # Pillow 10 removed textsize(); derive dimensions from textbbox().
+    label_bbox1 = draw.textbbox((0, 0), str(label1), font=font)
+    label_size1 = np.array(
+        [label_bbox1[2] - label_bbox1[0], label_bbox1[3] - label_bbox1[1]]
+    )
 
     # 设置label起点
     text_origin1 = np.array([bbox1[0], bbox1[1] - label_size1[1]])

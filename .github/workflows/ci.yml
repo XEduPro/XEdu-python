@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
     - uses: actions/checkout@v3
@@ -33,7 +33,7 @@ jobs:
     - name: Verify handler modules import
       run: |
         python -c "from XEdu.hub.handlers.base import BaseHandler, ONNXHandler, DetectionHandler"
-        python -c "from XEdu.hub.handlers.detection import DetBodyHandler, DetCocoHandler, DetFaceHandler"
+        python -c "from XEdu.hub.handlers.detection import DetBodyHandler, DetCocoHandler, DetFaceHandler, PalmHandDetectorHandler"
         python -c "from XEdu.hub.model_discovery import support_tasks, describe_task"
 
     - name: Verify wheel contains all subpackages
@@ -52,6 +52,10 @@ jobs:
             "XEdu/hub/model_registry.py",
             "XEdu/hub/model_store.py",
             "XEdu/hub/exceptions.py",
+            "XEdu/examples/getting_started.ipynb",
+            "XEdu/examples/assets/xedu-vision-scene.png",
+            "XEdu/examples/assets/xedu-road-scene.png",
+            "XEdu/examples/assets/xedu-ocr-poster.png",
         ]
         names = zipfile.ZipFile(wheel).namelist()
         missing = [r for r in required if r not in names]

@@ -11,6 +11,16 @@ from .base import (
     EmbeddingHandler,
     ClassificationHandler,
 )
+from .audio import (
+    AudioEmbeddingHandler,
+    AudioKeywordDetectionHandler,
+    AudioPrototypeClassificationHandler,
+)
+from .multimodal import ImageTextMatchingHandler
+from .nlp import TextEmbeddingHandler, TextPrototypeClassificationHandler
+from .face_landmark import PoseFaceLandmarkHandler
+from .detection import PalmHandDetectorHandler
+from .pose import PoseBody17Handler
 
 __all__ = [
     "BaseHandler",
@@ -19,4 +29,13 @@ __all__ = [
     "PoseHandler",
     "EmbeddingHandler",
     "ClassificationHandler",
+    "AudioEmbeddingHandler",
+    "AudioKeywordDetectionHandler",
+    "AudioPrototypeClassificationHandler",
+    "ImageTextMatchingHandler",
+    "TextEmbeddingHandler",
+    "TextPrototypeClassificationHandler",
+    "PoseFaceLandmarkHandler",
+    "PalmHandDetectorHandler",
+    "PoseBody17Handler",
 ]

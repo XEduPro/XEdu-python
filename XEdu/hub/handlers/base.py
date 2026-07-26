@@ -18,7 +18,7 @@ import numpy as np
 import onnxruntime as ort
 
 from ..exceptions import XEduError, XEduDependencyError
-from ..model_store import get_model_store, check_dependencies
+from ..model_store import ModelStore, get_model_store, check_dependencies
 from ..model_registry import get_default_model
 
 
@@ -43,6 +43,8 @@ class BaseHandler(ABC):
         self.download_path = download_path
         self.model = None
         self.kwargs = kwargs
+        if "model_id" in kwargs:
+            self.model_id = kwargs["model_id"]
 
         # 检查依赖
         if self.model_id:
@@ -67,7 +69,7 @@ class BaseHandler(ABC):
             if not os.path.exists(checkpoint_path):
                 raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
         else:
-            store = get_model_store()
+            store = ModelStore(self.download_path) if self.download_path else get_model_store()
             checkpoint_path = store.get_model_path(model_id, auto_download=True)
 
         # 子类具体加载逻辑

@@ -21,6 +21,11 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.8-3.10
+    import tomli as tomllib
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 EXPECTED_SUBPACKAGES = [
@@ -33,6 +38,18 @@ EXPECTED_SUBPACKAGES = [
     "XEdu/LLM/llms/__init__.py",
     "XEdu/utils/__init__.py",
 ]
+
+EXPECTED_EXAMPLE_ASSETS = [
+    "XEdu/examples/getting_started.ipynb",
+    "XEdu/examples/assets/xedu-vision-scene.png",
+    "XEdu/examples/assets/xedu-road-scene.png",
+    "XEdu/examples/assets/xedu-ocr-poster.png",
+]
+
+
+def load_pyproject():
+    with (REPO_ROOT / "pyproject.toml").open("rb") as file:
+        return tomllib.load(file)
 
 
 @pytest.mark.slow
@@ -60,7 +77,7 @@ def test_wheel_contains_all_subpackages(tmp_path):
     with zipfile.ZipFile(wheels[0]) as zf:
         names = set(zf.namelist())
 
-    missing = [f for f in EXPECTED_SUBPACKAGES if f not in names]
+    missing = [f for f in EXPECTED_SUBPACKAGES + EXPECTED_EXAMPLE_ASSETS if f not in names]
     assert not missing, f"wheel is missing expected files: {missing}"
 
 
@@ -74,3 +91,31 @@ def test_setup_cfg_uses_automatic_package_discovery():
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'packages = ["XEdu"]' not in pyproject
     assert "[tool.setuptools.packages.find]" in pyproject
+
+
+def test_project_supports_python_38_with_compatible_scientific_dependencies():
+    project = load_pyproject()["project"]
+
+    assert project["requires-python"] == ">=3.8"
+    assert "Programming Language :: Python :: 3.8" in project["classifiers"]
+    assert "numpy>=1.24,<1.25; python_version < '3.9'" in project["dependencies"]
+    assert "numpy>=1.26,<2; python_version >= '3.9'" in project["dependencies"]
+    assert "matplotlib>=3.7,<3.8; python_version < '3.9'" in project["dependencies"]
+    assert "matplotlib>=3.8; python_version >= '3.9'" in project["dependencies"]
+
+
+def test_gradio_is_available_only_through_optional_full_install():
+    project = load_pyproject()["project"]
+    extras = project["optional-dependencies"]
+
+    assert "gradio>=4,<5" in extras["llm"]
+    assert "gradio>=4,<5" in extras["all"]
+    assert all(not dependency.startswith("gradio") for dependency in project["dependencies"])
+
+
+def test_package_data_includes_getting_started_notebook_and_assets():
+    package_data = load_pyproject()["tool"]["setuptools"]["package-data"]
+
+    assert "XEdu.examples" in package_data
+    assert "getting_started.ipynb" in package_data["XEdu.examples"]
+    assert "assets/*.png" in package_data["XEdu.examples"]

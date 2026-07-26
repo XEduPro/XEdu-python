@@ -65,6 +65,20 @@ def describe_task(task_name: str, lang: str = "en") -> Dict[str, Any]:
         "input_type": primary_model.input_type,
         "output_type": primary_model.output_type,
         "available_models": [m.model_id for m in models],
+        "models": [
+            {
+                "model_id": m.model_id,
+                "filename": m.filename,
+                "description": m.description,
+                "latency_tier": m.latency_tier,
+                "quality_tier": m.quality_tier,
+                "auto_download": m.auto_download,
+                "mirror_count": len(m.mirror_urls),
+                "recommended_for": m.recommended_for,
+                "tags": m.tags,
+            }
+            for m in models
+        ],
         "optional_dependencies": list(set(
             dep for m in models for dep in m.optional_dependencies
         )),
@@ -105,7 +119,9 @@ def describe_model(model_id: str, lang: str = "en") -> Dict[str, Any]:
         "input_type": model.input_type,
         "output_type": model.output_type,
         "source_url": model.source_url,
+        "mirror_urls": model.mirror_urls,
         "auto_download": model.auto_download,
+        "checksum": model.checksum,
         "optional_dependencies": model.optional_dependencies,
         "providers": model.providers,
         "latency_tier": model.latency_tier,
