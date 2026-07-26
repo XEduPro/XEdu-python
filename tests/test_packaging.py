@@ -109,6 +109,14 @@ def test_gradio_is_available_only_through_optional_full_install():
     assert all(not item.startswith("gradio") for item in project["dependencies"])
 
 
+def test_readme_documents_python_38_and_optional_full_installs():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "Python 3.8" in readme
+    assert "pip install XEdu-python[llm]" in readme
+    assert "pip install XEdu-python[all]" in readme
+
+
 def test_package_data_includes_the_bundled_uppercase_font_extension():
     config = load_pyproject()
     package_data = config["tool"]["setuptools"]["package-data"]
