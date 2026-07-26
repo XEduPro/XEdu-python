@@ -7,9 +7,7 @@ import XEdu.examples
 def test_getting_started_notebook_uses_match_image_text_return_schema():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "result['matches'][0]['text']" in source
     assert "result['best_text']" not in source
@@ -18,9 +16,7 @@ def test_getting_started_notebook_uses_match_image_text_return_schema():
 def test_getting_started_notebook_uses_packaged_example_assets():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "Path(XEdu.examples.__file__).resolve().parent / 'assets'" in source
     assert "import XEdu.examples" in source
@@ -37,9 +33,7 @@ def test_examples_package_imports_for_packaged_resources():
 def test_hand_and_face_landmark_example_runs_direct_hand_detection():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "hand_boxes, hand_image = hand.inference" in source
     assert "face_boxes, face_image = face.inference" in source
@@ -48,9 +42,7 @@ def test_hand_and_face_landmark_example_runs_direct_hand_detection():
 def test_hand_example_uses_wholebody_pose_for_full_scene_asset():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "whole = wf(task='pose_wholebody133')" in source
     assert "left_hand21 = whole_points[91:112]" in source
@@ -61,9 +53,7 @@ def test_hand_example_uses_wholebody_pose_for_full_scene_asset():
 def test_getting_started_notebook_runs_ocr_and_audio_examples():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "ocr = wf(task='ocr')" in source
     assert "audio_embedder = wf(task='embedding_audio')" in source
@@ -73,9 +63,7 @@ def test_getting_started_notebook_runs_ocr_and_audio_examples():
 def test_getting_started_notebook_explains_how_to_read_comparison_results():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "行和列的顺序" in source
     assert "候选文本及其分数" in source
@@ -86,15 +74,16 @@ def test_getting_started_notebook_explains_how_to_read_comparison_results():
 def test_getting_started_notebook_includes_the_full_feature_install_command():
     notebook_path = Path(__file__).parents[1] / "XEdu" / "examples" / "getting_started.ipynb"
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
-    source = "".join(
-        "".join(cell.get("source", [])) for cell in notebook["cells"]
-    )
+    source = "".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
     assert "f'{wheel_path}[all]'" in source
-    assert "XEdu-python[all]" in source
+    assert "XEdu-python[all]==2.1.0" in source
     assert "--upgrade" in source
     assert "OCR、音频和 Gradio" in source
-    assert "git+https://github.com/XEduPro/XEdu-python.git@2.1" in source
+    assert "http://8.145.44.54:3000/api/packages/admin/pypi/simple" in source
+    assert "https://pypi.tuna.tsinghua.edu.cn/simple" in source
+    assert "--trusted-host" in source
+    assert "git+https://github.com/XEduPro/XEdu-python.git@2.1" not in source
     assert "folder / 'pyproject.toml'" in source
 
 
