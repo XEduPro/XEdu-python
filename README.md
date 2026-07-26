@@ -4,7 +4,7 @@
 
 做有用的AI教育
 
-[文档](https://xedu.readthedocs.io/zh-cn/master/) | [官网](https://www.openinnolab.org.cn/pjedu/xedu/mmedu) | [快速上手 Notebook](http://8.145.44.54:3000/admin/XEdu-python/src/branch/2.1/XEdu/examples/getting_started.ipynb)
+[文档](https://xedu.readthedocs.io/zh-cn/master/) | [官网](https://www.openinnolab.org.cn/pjedu/xedu/mmedu) | <a href="http://8.145.44.54:3000/admin/XEdu-python/releases/download/2.1.0/getting_started.ipynb" download="getting_started.ipynb">下载快速上手 Notebook</a>
 
 </div>
 
@@ -32,7 +32,7 @@ python -m pip install --upgrade \
   "XEdu-python[all]==2.1.0"
 ```
 
-安装后可直接下载并打开 [getting_started.ipynb](http://8.145.44.54:3000/admin/XEdu-python/raw/branch/2.1/XEdu/examples/getting_started.ipynb)。
+安装后可直接下载并打开 <a href="http://8.145.44.54:3000/admin/XEdu-python/releases/download/2.1.0/getting_started.ipynb" download="getting_started.ipynb">getting_started.ipynb</a>。
 如果希望打开已安装包内的同名文件，请运行：
 
 ```bash
