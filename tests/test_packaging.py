@@ -64,9 +64,9 @@ def test_wheel_contains_all_subpackages(tmp_path):
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, (
-        f"wheel build failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"wheel build failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
 
     wheels = list(dist_dir.glob("*.whl"))
     assert wheels, "no wheel produced"
@@ -115,12 +115,13 @@ def test_development_extra_can_build_the_wheel():
     assert "build>=1.0,<2" in dev_dependencies
 
 
-def test_readme_documents_python_38_and_optional_full_installs():
+def test_readme_documents_python_38_and_gitea_full_install():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "Python 3.8" in readme
-    assert "pip install XEdu-python[llm]" in readme
-    assert "pip install XEdu-python[all]" in readme
+    assert "XEdu-python[all]==2.1.0" in readme
+    assert "api/packages/admin/pypi/simple" in readme
+    assert "仅将 `[all]` 替换为" in readme
 
 
 def test_package_data_includes_the_bundled_uppercase_font_extension():

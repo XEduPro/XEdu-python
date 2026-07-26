@@ -97,3 +97,14 @@ def test_first_code_cell_can_install_the_local_wheel_with_current_python():
     assert "sys.executable" in source
     assert "wheel_path" in source
     assert "[all]" in source
+
+
+def test_readme_documents_the_gitea_install_and_notebook_entrypoint():
+    readme_path = Path(__file__).parents[1] / "README.md"
+    readme = readme_path.read_text(encoding="utf-8")
+
+    assert "XEdu-python[all]==2.1.0" in readme
+    assert "http://8.145.44.54:3000/api/packages/admin/pypi/simple" in readme
+    assert "getting_started.ipynb" in readme
+    assert "Path(XEdu.examples.__file__).with_name('getting_started.ipynb')" in readme
+    assert "git+https://github.com/XEduPro/XEdu-python.git@2.1" not in readme

@@ -4,7 +4,7 @@
 
 做有用的AI教育
 
-[文档](https://xedu.readthedocs.io/zh-cn/master/) | [官网](https://www.openinnolab.org.cn/pjedu/xedu/mmedu) | [示例](./XEdu/examples/)
+[文档](https://xedu.readthedocs.io/zh-cn/master/) | [官网](https://www.openinnolab.org.cn/pjedu/xedu/mmedu) | [快速上手 Notebook](http://8.145.44.54:3000/admin/XEdu-python/src/branch/2.1/XEdu/examples/getting_started.ipynb)
 
 </div>
 
@@ -19,24 +19,33 @@ XEdu-python 是一个面向中小学 AI 教学场景的模型推理和工具库�
 - **一体化 LLM 支持**：国产大模型（通义、文心、GLM、Kimi、深度求索）和自建 Gradio 网关
 - **教学友好**：内置 Gradio 聊天 UI，支持实时演示和交互
 
-## 安装
+## 安装与快速上手
 
-`2.1` 源码分支支持 Python 3.8 及以上版本。`2.1.0` 尚未发布到 PyPI，
-当前可直接从 GitHub 源码安装全部功能：
+`2.1.0` 支持 Python 3.8 及以上版本。它暂不发布到官方 PyPI，请使用 XEdu
+Gitea 软件源安装固定版本：
 
 ```bash
-python -m pip install --upgrade "XEdu-python[all] @ git+https://github.com/XEduPro/XEdu-python.git@2.1"
+python -m pip install --upgrade \
+  --trusted-host 8.145.44.54 \
+  --index-url http://8.145.44.54:3000/api/packages/admin/pypi/simple \
+  --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+  "XEdu-python[all]==2.1.0"
 ```
 
-### 可选依赖
+安装后可直接下载并打开 [getting_started.ipynb](http://8.145.44.54:3000/admin/XEdu-python/raw/branch/2.1/XEdu/examples/getting_started.ipynb)。
+如果希望打开已安装包内的同名文件，请运行：
 
-- LLM 与 Gradio 聊天界面：`pip install XEdu-python[llm]`
-- OCR 任务：`pip install XEdu-python[ocr]`
-- 音频 embedding / 分类：`pip install XEdu-python[audio]`
-- OCR、音频和 Gradio 全部依赖：`pip install XEdu-python[all]`
+```bash
+python -c "from pathlib import Path; import XEdu.examples; print(Path(XEdu.examples.__file__).with_name('getting_started.ipynb'))"
+```
 
-上述包名安装命令适用于 `2.1.0` 发布到 PyPI 之后；发布前请使用前面的
-GitHub 源码安装命令。
+### 按需安装
+
+如果不需要全部功能，复制上面的 Gitea 安装命令，仅将 `[all]` 替换为：
+
+- `[llm]`：LLM 与 Gradio 聊天界面
+- `[ocr]`：OCR 任务
+- `[audio]`：音频 embedding / 分类
 
 ## 快速开始
 
