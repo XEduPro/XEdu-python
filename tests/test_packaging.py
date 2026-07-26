@@ -113,6 +113,12 @@ def test_gradio_is_available_only_through_optional_full_install():
     assert all(not dependency.startswith("gradio") for dependency in project["dependencies"])
 
 
+def test_development_extra_can_build_the_wheel():
+    dev_dependencies = load_pyproject()["project"]["optional-dependencies"]["dev"]
+
+    assert "build>=1.0,<2" in dev_dependencies
+
+
 def test_package_data_includes_getting_started_notebook_and_assets():
     package_data = load_pyproject()["tool"]["setuptools"]["package-data"]
 
